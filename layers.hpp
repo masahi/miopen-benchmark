@@ -347,6 +347,38 @@ void mm_blas(const Tensor& A, bool transA, const Tensor& B, bool transB, Tensor&
     assert(err == 0);
 }
 
+void bias_add(Tensor& y, const Tensor& b, const Tensor& one_vector){
+    int M = y.n;
+    int N = y.c;
+    float alpha = 1.f;
+    float beta = 1.f;
+    hipblasHandle_t blas_handle;
+    hipblasCreate(&blas_handle);
+    hipblasOperation_t opA = HIPBLAS_OP_N;
+    hipblasOperation_t opB = HIPBLAS_OP_T;
+    int lda = b.c;
+    int ldb = one_vector.n;    
+    int ldc = y.c;
+    hipblasStatus_t err = hipblasSgemm(blas_handle, opA, opB, N, M, 1, &alpha, (const float*)b.data, lda, (const float*)one_vector.data, ldb, &beta, (float*)y.data, ldc);
+}
+
+void bias_backward(Tensor& dbias, const Tensor& doutput, const Tensor& one_vector){
+    const int M = doutput.c;
+    const int N = doutput.n;
+    //    std::cout << "M, N, one_vector.n: " << M << "," << N << "," << one_vector.n << std::endl;
+    assert(N == one_vector.n);
+    const float alpha = 1;
+    const float beta = 0;
+    hipblasHandle_t blas_handle;
+    hipblasCreate(&blas_handle);
+    hipblasOperation_t trans_A = HIPBLAS_OP_N;
+    int lda = doutput.c;
+    int incx = 1;
+    int incy = 1;
+    auto err = hipblasSgemv(blas_handle, trans_A, M, N, &alpha, (const float*)doutput.data, lda, (const float*)one_vector.data, incx, &beta, (float*)dbias.data, incy);
+    assert(err == 0);
+}
+
 // (batch_size * size) -> (batch_size * size)
 struct Linear : public Layer {
     int batch_size;
@@ -374,10 +406,10 @@ struct Linear : public Layer {
           dweights(out_size, in_size, 1, 1),
 	  bias(1, in_size, 1, 1),
 	  dbias(1, in_size, 1, 1),
-	  one_vector(out_size, 1, 1, 1)
+	  one_vector(input_dim.n, 1, 1, 1)
     {
-	std::vector<float> one_vector_cpu(out_size, 1);
-	hipMemcpyHtoD(one_vector.data, &one_vector_cpu[0], out_size * sizeof(float));
+	std::vector<float> one_vector_cpu(input_dim.n, 1);
+	hipMemcpyHtoD(one_vector.data, &one_vector_cpu[0], one_vector_cpu.size() * sizeof(float));
     }
 
     void forward(const Tensor& input, Tensor& output) {
@@ -387,12 +419,14 @@ struct Linear : public Layer {
         assert(in_size == input.c * input.h * input.w);
         mm_blas(input, false, weights, true, output); // O <- I * W^T
         input_ref = &input;
+	bias_add(output, bias, one_vector);
     }
 
     void backward(const Tensor& doutput, Tensor& dinput) {
         // two MMs
         mm_blas(doutput, true, *input_ref, false, dweights); // dW <- dO^T * I
         mm_blas(doutput, false, weights, false, dinput); // dI <- dO * W
+	bias_backward(dbias, doutput, one_vector);
     }
 };
 
