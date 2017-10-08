@@ -3,6 +3,7 @@
 
 #include "tensor.hpp"
 #include "function.hpp"
+#include "miopen.hpp"
 
 struct ConvDesc {
     miopenConvolutionDescriptor_t desc;
@@ -52,6 +53,9 @@ static Dim getConvOutputDim(int padding, int stride, const TensorDesc& input, co
 struct ConvLayer : public ConvDesc, public ConvLayerDesc, public Layer {
     Tensor weights;
     Tensor dweights;
+    Tensor bias;
+    Tensor dbias;
+  
     const Tensor* input_ref;
 
     // algorithm selection:
@@ -70,7 +74,9 @@ struct ConvLayer : public ConvDesc, public ConvLayerDesc, public Layer {
           ConvLayerDesc({input_dims.n, input_dims.h, input_dims.w, input_dims.c, channels_out, kernel_size, padding, stride}),
           Layer((Dim&)input_dims, getConvOutputDim(padding, stride, input_dims, TensorDesc(channels_out, input_dims.c, kernel_size, kernel_size))),
           weights(channels_out, input_dims.c, kernel_size, kernel_size),
-          dweights(channels_out, input_dims.c, kernel_size, kernel_size)
+          dweights(channels_out, input_dims.c, kernel_size, kernel_size),
+	  bias(1, channels_out, 1, 1),
+  	  dbias(1, channels_out, 1, 1)
     {
     }
 
@@ -163,6 +169,8 @@ struct ConvLayer : public ConvDesc, public ConvLayerDesc, public Layer {
         CHECK_MIO(miopenConvolutionForward(mio::handle(), &alpha, input.desc, input.data, weights.desc, weights.data, this->desc, fwd_algo, &beta, output.desc, output.data, buffer.data, buffer.size));
         // save for backward
         input_ref = &input;
+
+	CHECK_MIO(miopenConvolutionForwardBias(mio::handle(), &alpha, bias.desc, bias.data, &beta, output.desc, output.data));
     }
 
     void backward(const Tensor& doutput, Tensor& dinput) override {
@@ -171,6 +179,7 @@ struct ConvLayer : public ConvDesc, public ConvLayerDesc, public Layer {
         DevBuffer& buffer = WorkSpace::get();
         CHECK_MIO(miopenConvolutionBackwardData(mio::handle(), &alpha, doutput.desc, doutput.data, weights.desc, weights.data, this->desc, bwd_data_algo, &beta, dinput.desc, dinput.data, buffer.data, buffer.size));
         CHECK_MIO(miopenConvolutionBackwardWeights(mio::handle(), &alpha, doutput.desc, doutput.data, input_ref->desc, input_ref->data, this->desc, bwd_weights_algo, &beta, dweights.desc, dweights.data, buffer.data, buffer.size));
+	CHECK_MIO(miopenConvolutionBackwardBias(mio::handle(), &alpha, doutput.desc, doutput.data, &beta, dbias.desc, dbias.data));
     }
 };
 
@@ -346,6 +355,9 @@ struct Linear : public Layer {
 
     Tensor weights; // dim (out_channels, in_channels, 1, 1)
     Tensor dweights;
+    Tensor bias;
+    Tensor dbias;
+    Tensor one_vector;
 
     const Tensor* input_ref;
 
@@ -359,8 +371,13 @@ struct Linear : public Layer {
           in_size(input_dim.c * input_dim.h * input_dim.w),
           out_size(out_size),
           weights(out_size, in_size, 1, 1),
-          dweights(out_size, in_size, 1, 1)
+          dweights(out_size, in_size, 1, 1),
+	  bias(1, in_size, 1, 1),
+	  dbias(1, in_size, 1, 1),
+	  one_vector(out_size, 1, 1, 1)
     {
+	std::vector<float> one_vector_cpu(out_size, 1);
+	hipMemcpyHtoD(one_vector.data, &one_vector_cpu[0], out_size * sizeof(float));
     }
 
     void forward(const Tensor& input, Tensor& output) {

@@ -26,4 +26,7 @@ layerwise
 alexnet
 benchmark_wino
 gputop
+vgg19
 main
+build
+*.json
