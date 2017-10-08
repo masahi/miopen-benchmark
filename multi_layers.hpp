@@ -79,6 +79,10 @@ struct Sequential : public Function {
         emplace<ReLU>();
     }
 
+    void addSoftmax() {
+        emplace<Softmax>();
+    }
+  
     void addMaxPool(int kernel_size, int padding, int stride) {
         emplace<MaxPool>(kernel_size, padding, stride);
     }

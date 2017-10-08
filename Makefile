@@ -3,7 +3,7 @@ HIP_PATH?= $(wildcard /opt/rocm/hip)
 HIPCC=$(HIP_PATH)/bin/hipcc
 INCLUDE_DIRS=-I$(HIP_PATH)/include -I$(ROCM_PATH)/include -I$(ROCM_PATH)/hipblas/include
 LD_FLAGS=-L$(ROCM_PATH)/lib -L$(ROCM_PATH)/opencl/lib/x86_64 -lMIOpen -lOpenCL -lmiopengemm -lhipblas-hcc -lrocblas-hcc
-TARGET=--amdgpu-target=gfx900
+TARGET=--amdgpu-target=gfx803
 LAYER_TIMING=1
 
 #HIPCC_FLAGS=-g -Wall $(CXXFLAGS) $(TARGET) $(INCLUDE_DIRS)
@@ -23,6 +23,9 @@ benchmark: all
 
 alexnet: alexnet.cpp $(HEADERS)
 	$(HIPCC) $(HIPCC_FLAGS) alexnet.cpp $(LD_FLAGS) -o $@
+
+vgg19: vgg19.cpp $(HEADERS)
+	$(HIPCC) $(HIPCC_FLAGS) vgg19.cpp $(LD_FLAGS) -o $@
 
 main: main.cpp $(HEADERS)
 	$(HIPCC) $(HIPCC_FLAGS) main.cpp $(LD_FLAGS) -o $@

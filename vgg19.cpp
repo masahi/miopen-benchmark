@@ -4,47 +4,41 @@
 #include "layers.hpp"
 #include "multi_layers.hpp"
 
-
-/* TODO:
- * - [ ] create AlexNet class
- * - [ ] uniform random tensors (via host->device copy), and CPU initialized tensors
- * - [x] Make `Model` take input and output tensors in forward(), backward()
- * - [ ] Collect total and average times per layer
- * - [ ] implement and benchmark ResNet
- */
-
-
-void alexNet() {
+void VGGNet() {
     TensorDesc input_dim(16, 3, 224, 224);
 
     Sequential features(input_dim);
     /* features */
-    features.addConv(64, 11, 2, 4);
-    features.addReLU();
-    features.addMaxPool(3, 0, 2);
-    features.addConv(192, 5, 2, 1);
-    features.addReLU();
-    features.addMaxPool(3, 0, 2);
-    features.addConv(384, 3, 1, 1);
-    features.addReLU();
-    features.addConv(256, 3, 1, 1);
-    features.addReLU();
-    features.addConv(256, 3, 1, 1);
-    features.addReLU();
-    features.addMaxPool(3, 0, 2);
+
+    std::vector<std::vector<int>> arches{{2,64}, {2,128}, {4,256}, {4, 512}, {4, 512}};
+
+    for(auto& arch: arches){
+      int num_conv = arch[0];
+      int num_output = arch[1];
+      for(int i = 0; i < num_conv; ++i) {
+        features.addConv(num_output, 3, 1, 1);
+        features.addReLU();
+      }
+      features.addMaxPool(2, 0, 2);
+    }
 
     DEBUG("Dims after Features: " << features.getOutputDesc());
 
     /* classifier */
     Sequential classifier(features.getOutputDesc());
+    auto desc = features.getOutputDesc();
     // TODO Dropout
-    classifier.reshape(input_dim.n, 256 * 6 * 6, 1, 1);
+    classifier.reshape(input_dim.n, desc.c * desc.h * desc.w, 1, 1);
     classifier.addLinear(4096);
     classifier.addReLU();
+    //add dropout
     // TODO: Dropout
     classifier.addLinear(4096);
     classifier.addReLU();
+    //add dropout
     classifier.addLinear(1000);
+    classifier.addSoftmax();
+    //add softmax
 
     Model m(input_dim);
     m.add(features);
@@ -54,7 +48,6 @@ void alexNet() {
     BenchmarkLogger::benchmark(m, 50);
 }
 
-
 int main(int argc, char *argv[])
 {
     device_init();
@@ -62,7 +55,7 @@ int main(int argc, char *argv[])
     // enable profiling
     CHECK_MIO(miopenEnableProfiling(mio::handle(), true));
 
-    alexNet();
+    VGGNet();
 
     miopenDestroy(mio::handle());
     return 0;

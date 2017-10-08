@@ -128,7 +128,7 @@ int main(int argc, char *argv[])
     device_init();
     CHECK_MIO(miopenEnableProfiling(mio::handle(), true));
 
-    std::string mname = "resnet50";
+    std::string mname = "resnet101";
     Model m = resnet(mname);
     BenchmarkLogger::new_session(mname);
     BenchmarkLogger::benchmark(m, 20);

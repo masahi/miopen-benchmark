@@ -250,6 +250,31 @@ struct AvgPool : public PoolingLayer {
         : PoolingLayer(input_dim, kernel_size, padding, stride, miopenPoolingAverage) {}
 };
 
+struct Softmax : public Layer {
+    const Tensor* output_ref;
+
+    virtual std::ostream& write_name(std::ostream& os) const {
+        return os << "Softmax()";
+    }
+
+    Softmax(const TensorDesc& input_dim) : Layer(input_dim, input_dim) {
+    }
+
+    void forward(const Tensor& input, Tensor& output) {
+        float alpha = 1.f;
+        float beta = 0.f;
+	CHECK_MIO(miopenSoftmaxForward(mio::handle(), &alpha, input.desc, input.data, &beta, output.desc, output.data));
+        // save for backward
+        this->output_ref = &output;
+    }
+
+    void backward(const Tensor& doutput, Tensor& dinput) {
+        float alpha = 1.f;
+        float beta = 0.f;
+	CHECK_MIO(miopenSoftmaxBackward(mio::handle(), &alpha, output_ref->desc, output_ref->data, doutput.desc, doutput.data, &beta, dinput.desc, dinput.data));
+    }
+};
+
 struct ReLU : public Layer {
     miopenActivationDescriptor_t desc;
 
